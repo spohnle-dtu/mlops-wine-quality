@@ -7,6 +7,9 @@ import glob
 from pathlib import Path
 from PIL import Image
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
+from torch.utils.data import DataLoader, random_split
+
 
 app = typer.Typer()
 
@@ -93,6 +96,49 @@ def preprocess_check():
     preprocess()
     dataset = AlcDataset(Path("data/processed"))
     show_sample(dataset, index=700)
+
+# ---------------------------
+@dataclass
+class DataConfig:
+    processed_path: Path = Path("data/processed")
+    batch_size: int = 32
+    val_fraction: float = 0.2
+    seed: int = 42
+    num_workers: int = 0  # macOS stable
+
+
+def make_dataloaders(cfg: DataConfig):
+    """
+    Returns: train_loader, val_loader, class_names
+    """
+    ds = AlcDataset(cfg.processed_path)
+
+    n = len(ds)
+    n_val = int(round(n * cfg.val_fraction))
+    n_train = n - n_val
+
+    g = torch.Generator().manual_seed(cfg.seed)
+    train_ds, val_ds = random_split(ds, [n_train, n_val], generator=g)
+
+    pin = torch.cuda.is_available()  # pin_memory only helps on CUDA
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=cfg.batch_size,
+        shuffle=True,
+        num_workers=cfg.num_workers,
+        pin_memory=pin,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+        pin_memory=pin,
+    )
+
+    class_names = ["beer", "whiskey", "wine"]  # must match preprocess() order
+    return train_loader, val_loader, class_names
 
 if __name__ == "__main__":
     app()
